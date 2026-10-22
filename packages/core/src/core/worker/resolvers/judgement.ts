@@ -1,4 +1,6 @@
 import { removeRedundant, clearString } from '../../utils/string';
+import { resolvePlainAnswer } from '../utils';
+import { StringUtils } from '../../../utils/string';
 
 /** 判断题匹配结果 */
 export interface JudgementResolveResult {
@@ -59,7 +61,38 @@ export function resolveJudgement(answerGroups: string[][], options: string[]): J
 		}
 	}
 
+	// 纯 ABCD 字母答案兜底（题库返回 "A"/"B" 而非"正确/错误"文本时）
+	const plain = resolveJudgementPlainLetter(answerGroups, options);
+	if (plain) {
+		return { finish: true, option: plain };
+	}
+
 	return { finish: false };
+}
+
+/**
+ * 判断题的纯字母答案兜底
+ *
+ * 部分题库（含大模型答题服务）返回的是选项字母而非"正确/错误"文本，
+ * 此时需要按字母定位选项。仅当选项本身可判定正误性质时才采纳，
+ * 避免把普通单选题的两个选项误当作判断题。
+ */
+function resolveJudgementPlainLetter(answerGroups: string[][], options: string[]): string | undefined {
+	if (options.length !== 2) return;
+	const correctIndex = options.findIndex((o) => matches(o, CORRECT_WORDS));
+	const incorrectIndex = options.findIndex((o) => matches(o, INCORRECT_WORDS));
+	if (correctIndex === -1 || incorrectIndex === -1) return;
+
+	for (const answers of answerGroups) {
+		for (const answer of answers) {
+			const letter = resolvePlainAnswer(StringUtils.nowrap(answer, '').trim());
+			if (!letter || letter.length !== 1) continue;
+			const index = letter.charCodeAt(0) - 65;
+			if (index === correctIndex || index === incorrectIndex) {
+				return options[index];
+			}
+		}
+	}
 }
 
 function matches(target: string, words: string[]) {
